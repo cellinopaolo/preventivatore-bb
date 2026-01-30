@@ -13,7 +13,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("💎 B&B Preventivi Pro v6.8.5")
+st.title("💎 B&B Preventivi Pro v6.8.6")
 
 BASE_FOLDER = "Listini_BB"
 categorie = ["Mattoni", "Pietra", "Legno"]
@@ -44,7 +44,7 @@ if gamma:
     # --- Input Dati ---
     col1, col2 = st.columns(2)
     with col1:
-        qty_in = st.number_input("Quantità Richiesta (m2)", min_value=0.0, step=0.1, format="%.2f")
+        qty_in = st.number_input("Quantità Richiesta", min_value=0.0, step=0.1, format="%.2f")
         unit_var = st.radio("Unità inserita", ["m2", "Pezzi"])
     with col2:
         sconto_man = st.number_input("Sconto % (0=Auto)", min_value=0, max_value=100)
@@ -60,10 +60,14 @@ if gamma:
         # 1. Calcolo Base Pezzi
         qty_base = (qty_in * resa_finale) if unit_var == "m2" else qty_in
         
-        # 2. LOGICA ARROTONDAMENTO AL BANCALE COMPLETO
-        # Inserite Genesis, Cotto, Fortis e Croma come richiesto
-        gamme_solo_bancali = ["Genesis", "Cotto", "Fortis", "Croma"]
-        arrotonda_bancale = any(g in gamma for g in gamme_solo_bancali)
+        # 2. LOGICA ARROTONDAMENTO REVISIONATA
+        gamme_potenziali_bancali = ["Genesis", "Cotto", "Fortis", "Croma"]
+        
+        # Verifica se è una gamma a bancali MA esclude listelli (LS) e angolari (AG)
+        is_bancale_gamma = any(g in gamma for g in gamme_potenziali_bancali)
+        is_pezzo_speciale = any(x in modello for x in ["LS", "AG"])
+        
+        arrotonda_bancale = is_bancale_gamma and not is_pezzo_speciale
 
         if mondo == "Legno":
             qty_eff_finale = qty_base + plus
@@ -76,11 +80,11 @@ if gamma:
             num_mostra = num_bancali
             tipo_collo = "Bancali"
         else:
-            # Arrotondamento standard alla SCATOLA/COLLO
+            # Arrotondamento standard alla SCATOLA (anche per Genesis LS/AG)
             num_colli = math.ceil(round(qty_base / valore_conf, 4))
             qty_eff_finale = (num_colli * valore_conf) + plus
             num_mostra = num_colli
-            tipo_collo = "Colli"
+            tipo_collo = "Colli/Scatole"
 
         mq_risultanti = qty_eff_finale / resa_finale
         sconto_f = (sconto_man / 100) if sconto_man > 0 else (0.50 if qty_eff_finale >= valore_bancale else 0.45)
