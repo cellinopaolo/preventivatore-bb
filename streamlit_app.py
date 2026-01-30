@@ -13,7 +13,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("💎 B&B Preventivi Pro v6.8.2")
+st.title("💎 B&B Preventivi Pro v6.8.5")
 
 BASE_FOLDER = "Listini_BB"
 categorie = ["Mattoni", "Pietra", "Legno"]
@@ -37,14 +37,15 @@ if gamma:
     # --- Logica Posa Fortis ---
     resa_finale = float(info.get("pz_m2", 1.0))
     if mondo == "Mattoni" and "Fortis" in gamma:
+        st.write("### Configurazione Posa Fortis")
         scelta_posa = st.radio("Configurazione Posa:", ["Di Piatto (62 pz/m2)", "Di Coltello (100 pz/m2)"])
         resa_finale = 62.0 if "Piatto" in scelta_posa else 100.0
 
     # --- Input Dati ---
     col1, col2 = st.columns(2)
     with col1:
-        qty_in = st.number_input("Quantità Richiesta (Utile)", min_value=0.0, step=0.1, format="%.2f")
-        unit_var = st.radio("Unità di misura inserita", ["m2", "Pezzi"])
+        qty_in = st.number_input("Quantità Richiesta (m2)", min_value=0.0, step=0.1, format="%.2f")
+        unit_var = st.radio("Unità inserita", ["m2", "Pezzi"])
     with col2:
         sconto_man = st.number_input("Sconto % (0=Auto)", min_value=0, max_value=100)
         iva_check = st.checkbox("IVA 22% (Privato)")
@@ -54,42 +55,47 @@ if gamma:
 
     if st.button("GENERA PREVENTIVO", use_container_width=True):
         valore_conf = float(info.get("pz_scatola", 1.0))
+        valore_bancale = float(info.get("pz_bancale", 1.0))
         
-        # LOGICA COMMERCIALE
-        # Se m2: qty_base diventa la quantità commerciale (utile * resa)
-        if unit_var == "m2":
-            qty_base = qty_in * resa_finale
-        else:
-            qty_base = qty_in
+        # 1. Calcolo Base Pezzi
+        qty_base = (qty_in * resa_finale) if unit_var == "m2" else qty_in
         
-        # Arrotondamento colli ed Extra
+        # 2. LOGICA ARROTONDAMENTO AL BANCALE COMPLETO
+        # Inserite Genesis, Cotto, Fortis e Croma come richiesto
+        gamme_solo_bancali = ["Genesis", "Cotto", "Fortis", "Croma"]
+        arrotonda_bancale = any(g in gamma for g in gamme_solo_bancali)
+
         if mondo == "Legno":
-            qty_eff_finale = qty_base + plus  # Quantità commerciale finale
-            num_colli = None # Non deve apparire
+            qty_eff_finale = qty_base + plus
+            num_mostra = None
+            tipo_collo = ""
+        elif arrotonda_bancale:
+            # Arrotondamento al BANCALE INTERO
+            num_bancali = math.ceil(round(qty_base / valore_bancale, 4))
+            qty_eff_finale = (num_bancali * valore_bancale) + plus
+            num_mostra = num_bancali
+            tipo_collo = "Bancali"
         else:
+            # Arrotondamento standard alla SCATOLA/COLLO
             num_colli = math.ceil(round(qty_base / valore_conf, 4))
             qty_eff_finale = (num_colli * valore_conf) + plus
+            num_mostra = num_colli
+            tipo_collo = "Colli"
 
-        # Calcolo MQ equivalenti per la visualizzazione (se l'unità è Pezzi o se serve il rapporto)
-        mq_equivalenti = qty_eff_finale / resa_finale
-
-        sconto_f = (sconto_man / 100) if sconto_man > 0 else (0.50 if qty_eff_finale >= info["pz_bancale"] else 0.45)
+        mq_risultanti = qty_eff_finale / resa_finale
+        sconto_f = (sconto_man / 100) if sconto_man > 0 else (0.50 if qty_eff_finale >= valore_bancale else 0.45)
         netto = info["prezzo"] * (1 - sconto_f)
         imponibile = (netto * qty_eff_finale) + trasp
 
         # --- Visualizzazione ---
-        # Determiniamo l'unità da mostrare: per il Legno mostriamo m2 (commerciali)
-        unita_testo = "m2" if mondo == "Legno" or unit_var == "m2" else "Pezzi"
-
         st.markdown(f"""
         <div class="report-text">
         <h3 style='margin-top:0;'>RIEPILOGO ORDINE</h3>
         <strong>Articolo:</strong> {modello}<br>
         <hr>
-        <strong>Quantità Finale (Comm.):</strong> {qty_eff_finale:.2f} {unita_testo}<br>
-        {f"<em>(Utile richiesta: {qty_in:.2f} m2)</em><br>" if mondo == "Legno" else ""}
-        {f"<em>(Equivalenti a: {mq_equivalenti:.2f} m2)</em><br>" if unit_var == "Pezzi" and mondo != "Legno" else ""}
-        {f"<strong>N. Colli:</strong> {num_colli}<br>" if num_colli is not None else ""}
+        <strong>Quantità Finale:</strong> {qty_eff_finale:.2f} {"m2" if mondo == "Legno" else "Pezzi"}<br>
+        {f"<em>(Equivalenti a: {mq_risultanti:.2f} m2)</em><br>" if mondo != "Legno" else ""}
+        {f"<strong>N. {tipo_collo}:</strong> {num_mostra}<br>" if num_mostra is not None else ""}
         <strong>Resa:</strong> {resa_finale} pz/m2<br>
         <hr>
         <strong>Prezzo Netto:</strong> {netto:.3f} €<br>
