@@ -3,29 +3,39 @@ import json
 import os
 import math
 
+# 1. Configurazione Pagina
 st.set_page_config(page_title="B&B Preventivi", layout="centered")
 
-# Stile pulito per il riepilogo
+# 2. CSS per lo stile "Scontrino Pulito"
 st.markdown("""
     <style>
-    .report-text { 
-        font-family: 'Segoe UI', sans-serif; 
-        background-color: #ffffff; 
-        padding: 20px; 
-        border: 1px solid #dddddd;
-        border-radius: 4px;
+    .report-container {
+        background-color: #ffffff;
+        padding: 20px;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        line-height: 1.6;
+        color: #333333;
     }
-    .stRadio > div { flex-direction: row; gap: 15px; }
-    hr { border: 0; border-top: 1px solid #eeeeee; margin: 10px 0; }
-    .totale-label { font-size: 1.2em; font-weight: bold; margin-top: 10px; }
+    .linea-divisione {
+        border-top: 1px solid #eeeeee;
+        margin: 15px 0;
+    }
+    .totale-evidenziato {
+        font-size: 1.25em;
+        font-weight: bold;
+        margin-top: 10px;
+        color: #000000;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("💎 B&B Preventivi Pro v6.7.9")
+st.title("💎 B&B Preventivi Pro")
 
 BASE_FOLDER = "Listini_BB"
 categorie = ["Mattoni", "Pietra", "Legno"]
 
+# --- Selezione ---
 mondo = st.sidebar.selectbox("Mondo", categorie)
 path_cat = os.path.join(BASE_FOLDER, mondo)
 
@@ -42,24 +52,26 @@ if gamma:
     modello = st.selectbox("Seleziona Modello", sorted(prodotti.keys()))
     info = prodotti[modello]
 
-    # --- Logica Posa Fortis ---
+    # --- Posa Fortis ---
     resa_finale = float(info.get("pz_m2", 1.0))
     if mondo == "Mattoni" and "Fortis" in gamma:
-        scelta_posa = st.radio("Configurazione Posa:", ["Di Piatto (62 pz/m2)", "Di Coltello (100 pz/m2)"])
+        scelta_posa = st.radio("Configurazione Posa:", ["Di Piatto (62 pz/m2)", "Di Coltello (100 pz/m2)"], horizontal=True)
         resa_finale = 62.0 if "Piatto" in scelta_posa else 100.0
 
+    # --- Input ---
     st.divider()
     c1, c2 = st.columns(2)
     with c1:
         qty_in = st.number_input("Quantità", min_value=0.0, step=0.1, format="%.2f")
-        unit_var = st.radio("Unità inserita", ["m2", "Pezzi"])
+        unit_var = st.radio("Unità inserita", ["m2", "Pezzi"], horizontal=True)
     with c2:
         sconto_man = st.number_input("Sconto % (0=Auto)", min_value=0, max_value=100)
-        iva_check = st.checkbox("Privato (IVA 22%)")
+        iva_check = st.checkbox("IVA 22% (Privato)")
 
     trasp = st.number_input("Trasporto (€)", min_value=0.0)
     plus = st.number_input("Extra (+)", min_value=0.0)
 
+    # --- Calcolo e Output ---
     if st.button("GENERA PREVENTIVO", use_container_width=True):
         valore_conf = float(info.get("pz_scatola", 1.0))
         qty_base_pz = (qty_in * resa_finale) if unit_var == "m2" else qty_in
@@ -75,25 +87,29 @@ if gamma:
         sconto_f = (sconto_man / 100) if sconto_man > 0 else (0.50 if qty_eff_pz >= info["pz_bancale"] else 0.45)
         netto = info["prezzo"] * (1 - sconto_f)
         imponibile = (netto * qty_eff_pz) + trasp
-        totale_f = imponibile * 1.22 if iva_check else imponibile
+        totale_v = imponibile * 1.22 if iva_check else imponibile
 
-        # --- OUTPUT CORRETTO (SENZA TAG VISIBILI) ---
-        html_output = f"""
-        <div class="report-text">
-            <h3 style='margin-top:0;'>RIEPILOGO ORDINE</h3>
+        # --- Visualizzazione ---
+        # Costruisco la stringa HTML separatamente per evitare errori di rendering
+        label_totale = "TOTALE IVATO" if iva_check else "TOTALE IMPONIBILE"
+        riga_mq = f"<i>(Equivalenti a: {mq_risultanti:.2f} m2)</i><br>" if unit_var == "Pezzi" else ""
+        
+        output_html = f"""
+        <div class="report-container">
+            <h2 style='margin:0 0 10px 0; color:#333;'>RIEPILOGO ORDINE</h2>
             <strong>Articolo:</strong> {modello}
-            <hr>
+            <div class="linea-divisione"></div>
             <strong>Quantità Finale:</strong> {qty_in if unit_var == "m2" else qty_eff_pz:.2f} {unit_var}<br>
-            {"<em>(Equivalenti a: " + f"{mq_risultanti:.2f}" + " m2)</em><br>" if unit_var == "Pezzi" else ""}
+            {riga_mq}
             <strong>N. Colli:</strong> {num_colli}<br>
             <strong>Resa:</strong> {resa_finale} pz/m2
-            <hr>
+            <div class="linea-divisione"></div>
             <strong>Prezzo Netto:</strong> {netto:.3f} €<br>
             <strong>Sconto:</strong> {sconto_f*100:.0f}%
-            <hr>
-            <div class="totale-label">
-                {"TOTALE IVATO" if iva_check else "TOTALE IMPONIBILE"}: {totale_f:.2f} €
+            <div class="linea-divisione"></div>
+            <div class="totale-evidenziato">
+                {label_totale}: {totale_v:.2f} €
             </div>
         </div>
         """
-        st.markdown(html_output, unsafe_allow_html=True)
+        st.markdown(output_html, unsafe_allow_html=True)
