@@ -110,18 +110,3 @@ if gamma:
             
             st.success("Preventivo generato correttamente.")
 
-
-
----
-
-### Perché questo è quello giusto:
-* **Gestione Legno:** Ho inserito il blocco `if mondo == "Legno"` che annulla l'arrotondamento al pacco/bancale come richiesto.
-* **Coefficiente PzM2:** Funziona sia per i mattoni (pezzi al mq) sia per il legno (coefficiente commerciale).
-* **Pietra:** Include lo slider per la maggiorazione posa a secco.
-* **Database:** Cerca i file esattamente nella struttura di cartelle che hai caricato su GitHub.
-
-### 🛠️ Il tuo comando per aggiornare l'app (Desktop)
-Ogni volta che modifichi il codice `app.py` sul tuo Mac, usa questo:
-
-```bash
-python3 -m PyInstaller --onefile --windowed --name "BB_PREVENTIVI_WEB" app.py
