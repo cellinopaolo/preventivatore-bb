@@ -3,9 +3,9 @@ import json
 import os
 import math
 
-# Configurazione Pagina
 st.set_page_config(page_title="B&B Preventivi Pro", layout="centered")
 
+# CSS per pulizia interfaccia
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
@@ -13,15 +13,14 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("💎 B&B Preventivi Pro v6.7.3")
-st.subheader("Web Edition")
+st.title("💎 B&B Preventivi Pro v6.7.4")
 
 BASE_FOLDER = "Listini_BB"
 categorie = ["Mattoni", "Pietra", "Legno"]
 
-# --- SIDEBAR ---
-st.sidebar.header("Configurazione")
-mondo = st.sidebar.selectbox("Mondo", categorie)
+# --- SIDEBAR DI CONFIGURAZIONE ---
+st.sidebar.header("Impostazioni Listino")
+mondo = st.sidebar.selectbox("Categoria", categorie)
 
 path_cat = os.path.join(BASE_FOLDER, mondo)
 if os.path.exists(path_cat):
@@ -29,11 +28,11 @@ if os.path.exists(path_cat):
     if listini:
         gamma = st.sidebar.selectbox("Linea Prodotto", listini)
     else:
-        st.error(f"Nessun file JSON in {path_cat}"); st.stop()
+        st.error(f"Nessun listino trovato in {mondo}"); st.stop()
 else:
-    st.error(f"Cartella '{mondo}' non trovata."); st.stop()
+    st.error(f"Database {mondo} non trovato."); st.stop()
 
-# --- CARICAMENTO E INTERFACCIA ---
+# --- CARICAMENTO DATI ---
 if gamma:
     with open(os.path.join(path_cat, f"{gamma}.json"), 'r') as f:
         prodotti = json.load(f)
@@ -41,71 +40,76 @@ if gamma:
     modello = st.selectbox("Seleziona Modello", sorted(prodotti.keys()))
     info = prodotti[modello]
 
-    # --- LOGICA POSA MATTONI (FORTIS) ---
+    # --- LOGICA POSA (SOLO FORTIS) ---
     resa_finale = float(info.get("pz_m2", 1.0))
-    
-    if mondo == "Mattoni":
-        st.info("Configurazione Posa Mattoni")
-        scelta_posa = st.radio(
-            "Tipo di Posa:",
-            ["Standard (da listino)", "Di Piatto (62 pz/m2)", "Di Coltello (100 pz/m2)"],
-            horizontal=True
-        )
-        if "Piatto" in scelta_posa:
-            resa_finale = 62.0
-        elif "Coltello" in scelta_posa:
-            resa_finale = 100.0
+    if mondo == "Mattoni" and "Fortis" in gamma:
+        st.subheader("Configurazione Posa Fortis")
+        scelta_posa = st.radio("Seleziona Posa:", ["Standard", "Di Piatto (62 pz/m2)", "Di Coltello (100 pz/m2)"], horizontal=True)
+        if "Piatto" in scelta_posa: resa_finale = 62.0
+        elif "Coltello" in scelta_posa: resa_finale = 100.0
 
+    # --- INPUT QUANTITÀ E EXTRA ---
+    st.divider()
     col1, col2 = st.columns(2)
     with col1:
         qty_in = st.number_input("Quantità Richiesta", min_value=0.0, step=0.1, format="%.2f")
-        unit_var = st.radio("Unità inserita", ["m2", "Pezzi"], horizontal=True)
-        sconto_extra = st.number_input("Sconto Manuale % (0 = Auto)", min_value=0, max_value=100, value=0)
+        unit_var = st.radio("Unità", ["m2", "Pezzi"], horizontal=True)
+        sconto_man = st.number_input("Sconto Manuale % (0=Auto)", min_value=0, max_value=100, value=0)
     
     with col2:
-        trasp = st.number_input("Trasporto Totale (€)", min_value=0.0, step=10.0)
-        plus = st.number_input("Aggiungi Unità Extra", min_value=0.0, step=0.1)
-        iva_check = st.checkbox("Applica IVA 22% (Privato)")
+        trasp = st.number_input("Trasporto (€)", min_value=0.0, step=10.0)
+        plus = st.number_input("Unità Extra (+)", min_value=0.0, step=0.1)
+        iva_check = st.checkbox("Privato (IVA 22%)")
 
+    # --- LOGICA PIETRA ---
     magg_pietra = 0
     if mondo == "Pietra":
         magg_pietra = st.slider("% Maggiorazione Posa a Secco", 0, 30, 0)
 
-    # --- CALCOLO ---
-    if st.button("CALCOLA PREVENTIVO", use_container_width=True):
+    # --- MOTORE DI CALCOLO INTEGRALE ---
+    if st.button("GENERA PREVENTIVO", use_container_width=True):
         if qty_in <= 0 and plus <= 0:
             st.warning("Inserisci una quantità.")
         else:
             valore_conf = float(info.get("pz_scatola", 1.0))
             
-            temp_qty = qty_in
+            # 1. Applica Maggiorazione Pietra
+            qty_lavoro = qty_in
             if mondo == "Pietra" and magg_pietra > 0:
-                temp_qty *= (1 + (magg_pietra / 100))
+                qty_lavoro *= (1 + (magg_pietra / 100))
 
-            # Applichiamo la resa (che ora tiene conto della posa scelta)
-            qty_base = temp_qty * resa_finale if unit_var == "m2" else temp_qty
+            # 2. Trasformazione in Base (mq -> pz o mq utile -> mq comm)
+            qty_base = qty_lavoro * resa_finale if unit_var == "m2" else qty_lavoro
             
+            # 3. Arrotondamento (Escluso per Legno)
             if mondo == "Legno":
                 qty_eff = qty_base + plus
                 num_colli = "N/A"
             else:
                 num_colli = math.ceil(round(qty_base / valore_conf, 4))
-                qty_eff = (num_confezioni * valore_conf) if 'num_confezioni' in locals() else (num_colli * valore_conf)
-                qty_eff += plus
+                qty_eff = (num_colli * valore_conf) + plus
 
-            sconto_applicato = (sconto_extra / 100) if sconto_extra > 0 else (0.50 if qty_eff >= info["pz_bancale"] else 0.45)
-            netto = info["prezzo"] * (1 - sconto_applicato)
-            totale_merce = netto * qty_eff
-            imponibile = totale_merce + trasp
+            # 4. Calcolo Sconto (Soglia Bancale dal CSV)
+            sconto_finale = (sconto_man / 100) if sconto_man > 0 else (0.50 if qty_eff >= info["pz_bancale"] else 0.45)
+            
+            # 5. Totali
+            prezzo_list = info["prezzo"]
+            netto = prezzo_list * (1 - sconto_finale)
+            tot_merce = netto * qty_eff
+            imponibile = tot_merce + trasp
 
+            # --- OUTPUT ---
             st.divider()
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Quantità Finale", f"{qty_eff:.2f} {unit_var}")
-            c2.metric("N. Colli", f"{num_colli}")
-            c3.metric("Resa applicata", f"{resa_finale} pz/m2")
-
-            st.write(f"### Dettaglio: {modello}")
-            if iva_check:
-                st.metric("TOTALE IVATO (22%)", f"{imponibile * 1.22:.2f} €")
-            else:
-                st.metric("TOTALE IMPONIBILE", f"{imponibile:.2f} €")
+            res1, res2 = st.columns(2)
+            with res1:
+                st.metric("Quantità Finale", f"{qty_eff:.2f} {unit_var}")
+                st.write(f"Prezzo Listino: {prezzo_list:.2f} €")
+                st.write(f"Sconto applicato: {sconto_finale*100:.0f}%")
+            with res2:
+                st.metric("Prezzo Netto", f"{netto:.3f} €")
+                if iva_check:
+                    st.metric("TOTALE IVATO", f"{imponibile * 1.22:.2f} €")
+                else:
+                    st.metric("TOTALE IMPONIBILE", f"{imponibile:.2f} €")
+            
+            st.caption(f"Dettaglio: {modello} | Resa: {resa_finale} | Colli: {num_colli}")
